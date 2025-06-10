@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """
-Website Screenshot Monitoring Tool with AI-Powered Change Detection
+AI-Powered Screenshot Monitoring Tool
+
+This tool captures website screenshots and uses Amazon Bedrock's Claude models
+to intelligently detect and analyze changes for deployment monitoring.
+
+For development context and session history, see: DEVELOPMENT_CONTEXT.md
+For optimization roadmap, see: OPTIMIZATIONS.md
+
 Usage: 
   python screenshot_monitor.py baseline <URL> [--name <name>] [--model <model>]
   python screenshot_monitor.py compare <URL> [--name <name>] [--model <model>]
@@ -67,6 +74,16 @@ class ScreenshotMonitor:
             model_details["direct"]              # Direct model (fallback)
         ]
         self.model_description = model_details["description"]
+        
+        # Initialize Bedrock client
+        try:
+            self.bedrock = boto3.client('bedrock-runtime', region_name=aws_region)
+        except NoCredentialsError:
+            print("Error: AWS credentials not found.")
+            print("Please configure AWS credentials using:")
+            print("  aws configure")
+            print("  or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables")
+            sys.exit(1)
     
     def load_model_config(self) -> dict:
         """Load model configuration from JSON file"""
@@ -102,16 +119,6 @@ class ScreenshotMonitor:
             raise ValueError(f"Invalid JSON in configuration file '{self.config_file}': {e}")
         except Exception as e:
             raise ValueError(f"Error loading configuration file '{self.config_file}': {e}")
-        
-        # Initialize Bedrock client
-        try:
-            self.bedrock = boto3.client('bedrock-runtime', region_name=aws_region)
-        except NoCredentialsError:
-            print("Error: AWS credentials not found.")
-            print("Please configure AWS credentials using:")
-            print("  aws configure")
-            print("  or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables")
-            sys.exit(1)
     
     def load_metadata(self) -> dict:
         """Load metadata about stored screenshots"""
