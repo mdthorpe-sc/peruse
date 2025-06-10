@@ -1,0 +1,501 @@
+#!/usr/bin/env python3
+"""
+Website Screenshot Monitoring Tool with AI-Powered Change Detection
+Usage: 
+  python screenshot_monitor.py baseline <URL> [--name <name>]
+  python screenshot_monitor.py compare <URL> [--name <name>] [--baseline-file <file>]
+  python screenshot_monitor.py list
+"""
+
+import argparse
+import asyncio
+import base64
+import json
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlparse
+import re
+import uuid
+
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    print("Error: Playwright is not installed.")
+    print("Please run: pip install playwright")
+    print("Then run: playwright install")
+    sys.exit(1)
+
+try:
+    import boto3
+    from botocore.exceptions import ClientError, NoCredentialsError
+except ImportError:
+    print("Error: boto3 is not installed.")
+    print("Please run: pip install boto3")
+    sys.exit(1)
+
+
+class ScreenshotMonitor:
+    def __init__(self, storage_dir: str = "screenshots", aws_region: str = "us-east-1"):
+        self.storage_dir = Path(storage_dir)
+        self.storage_dir.mkdir(exist_ok=True)
+        self.metadata_file = self.storage_dir / "metadata.json"
+        self.aws_region = aws_region
+        
+        # Define model IDs to try (inference profile first, then direct model)
+        self.model_ids = [
+            f"us.anthropic.claude-3-5-sonnet-20241022-v2:0",  # Inference profile (preferred)
+            f"anthropic.claude-3-5-sonnet-20241022-v2:0",     # Direct model (fallback)
+        ]
+        
+        # Initialize Bedrock client
+        try:
+            self.bedrock = boto3.client('bedrock-runtime', region_name=aws_region)
+        except NoCredentialsError:
+            print("Error: AWS credentials not found.")
+            print("Please configure AWS credentials using:")
+            print("  aws configure")
+            print("  or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables")
+            sys.exit(1)
+    
+    def load_metadata(self) -> dict:
+        """Load metadata about stored screenshots"""
+        if self.metadata_file.exists():
+            with open(self.metadata_file, 'r') as f:
+                return json.load(f)
+        return {}
+    
+    def save_metadata(self, metadata: dict):
+        """Save metadata about stored screenshots"""
+        with open(self.metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+    
+    def sanitize_name(self, url: str) -> str:
+        """Convert URL to a safe name for storage"""
+        parsed = urlparse(url)
+        domain = parsed.netloc or parsed.path
+        domain = re.sub(r'^www\.', '', domain)
+        safe_name = re.sub(r'[^\w\-.]', '_', domain)
+        safe_name = re.sub(r'_+', '_', safe_name)
+        return safe_name
+    
+    async def take_screenshot(self, url: str, output_path: str, viewport_width: int = 1920, viewport_height: int = 1080) -> bool:
+        """Take a screenshot of the given URL"""
+        print(f"Taking screenshot of: {url}")
+        
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch()
+                
+                try:
+                    page = await browser.new_page(viewport={'width': viewport_width, 'height': viewport_height})
+                    
+                    # Navigate with timeout
+                    try:
+                        await page.goto(url, wait_until='networkidle', timeout=30000)
+                    except Exception as e:
+                        print(f"Warning: Failed to wait for networkidle: {e}")
+                        await page.goto(url, timeout=30000)
+                    
+                    # Wait for dynamic content
+                    await page.wait_for_timeout(2000)
+                    
+                    # Take screenshot
+                    await page.screenshot(path=output_path, full_page=True)
+                    print(f"Screenshot saved to: {output_path}")
+                    return True
+                    
+                finally:
+                    await browser.close()
+                    
+        except Exception as e:
+            print(f"Error taking screenshot: {e}")
+            return False
+    
+    def encode_image_to_base64(self, image_path: str) -> str:
+        """Encode image to base64 for Bedrock API"""
+        with open(image_path, 'rb') as image_file:
+            return base64.b64encode(image_file.read()).decode('utf-8')
+    
+    def compare_with_claude(self, baseline_path: str, current_path: str, url: str) -> dict:
+        """Use Claude 3.5 Sonnet via Bedrock Converse API to compare screenshots"""
+        print("Analyzing screenshots with Claude 3.5 Sonnet...")
+        
+        try:
+            # Encode images
+            baseline_b64 = self.encode_image_to_base64(baseline_path)
+            current_b64 = self.encode_image_to_base64(current_path)
+            
+            # Prepare the prompt
+            prompt = f"""You are a website monitoring expert analyzing screenshots for changes. I will provide you with two screenshots of the same website URL: {url}
+
+The first image is the BASELINE (reference) screenshot.
+The second image is the CURRENT screenshot taken more recently.
+
+Please analyze these screenshots and provide a detailed comparison report in the following JSON format:
+
+{{
+    "has_changes": true/false,
+    "severity": "none|minor|moderate|major|critical",
+    "summary": "Brief summary of changes found",
+    "changes_detected": [
+        {{
+            "type": "layout|content|styling|functionality|error|availability",
+            "description": "Detailed description of the change",
+            "location": "Where on the page this change occurs",
+            "impact": "Potential impact of this change"
+        }}
+    ],
+    "availability_status": "available|partially_available|unavailable|error",
+    "recommendations": ["List of recommended actions if any issues found"]
+}}
+
+Focus on:
+- Layout changes (elements moved, resized, disappeared)
+- Content changes (text differences, images changed)
+- Error messages or broken elements
+- Overall site availability and functionality
+- Visual styling changes
+- Any elements that appear broken or missing
+
+Be thorough but practical - highlight changes that would matter for deployment monitoring."""
+
+            # Try different model IDs until one works
+            response = None
+            last_error = None
+            
+            for model_id in self.model_ids:
+                try:
+                    print(f"Trying model: {model_id}")
+                    response = self.bedrock.converse(
+                        modelId=model_id,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "text": prompt
+                                    },
+                                    {
+                                        "image": {
+                                            "format": "png",
+                                            "source": {
+                                                "bytes": base64.b64decode(baseline_b64)
+                                            }
+                                        }
+                                    },
+                                    {
+                                        "image": {
+                                            "format": "png", 
+                                            "source": {
+                                                "bytes": base64.b64decode(current_b64)
+                                            }
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        inferenceConfig={
+                            "maxTokens": 4000,
+                            "temperature": 0.1,
+                            "topP": 0.9
+                        }
+                    )
+                    print(f"✅ Successfully using model: {model_id}")
+                    break
+                except ClientError as e:
+                    last_error = e
+                    error_code = e.response['Error']['Code']
+                    print(f"❌ Model {model_id} failed: {error_code}")
+                    continue
+            
+            if response is None:
+                # All models failed, raise the last error
+                raise last_error
+            
+            # Parse response from Converse API
+            claude_response = response['output']['message']['content'][0]['text']
+            
+            # Try to extract JSON from Claude's response
+            try:
+                # Find JSON in the response
+                json_start = claude_response.find('{')
+                json_end = claude_response.rfind('}') + 1
+                if json_start != -1 and json_end != -1:
+                    analysis = json.loads(claude_response[json_start:json_end])
+                else:
+                    # Fallback if no JSON found
+                    analysis = {
+                        "has_changes": True,
+                        "severity": "unknown",
+                        "summary": "Analysis completed but format parsing failed",
+                        "raw_response": claude_response
+                    }
+            except json.JSONDecodeError:
+                analysis = {
+                    "has_changes": True,
+                    "severity": "unknown", 
+                    "summary": "Analysis completed but JSON parsing failed",
+                    "raw_response": claude_response
+                }
+            
+            return analysis
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == 'ValidationException':
+                print("Error: Invalid request to Bedrock. Check your image format and size.")
+                print("Tip: Make sure you have access to Claude 3.5 Sonnet in your AWS region.")
+            elif error_code == 'AccessDeniedException':
+                print("Error: Access denied to Bedrock. Check your AWS permissions.")
+                print("Tip: Request access to Claude models in Bedrock console: Model access > Request model access")
+            elif error_code == 'ResourceNotFoundException':
+                print("Error: Model not found. The inference profile may not be available in your region.")
+                print("Tip: Try a different AWS region or check model availability.")
+            else:
+                print(f"AWS Error: {e}")
+            return {"error": str(e)}
+        except Exception as e:
+            print(f"Error during comparison: {e}")
+            return {"error": str(e)}
+    
+    async def store_baseline(self, url: str, name: str = None, viewport_width: int = 1920, viewport_height: int = 1080):
+        """Store a baseline screenshot"""
+        if not name:
+            name = self.sanitize_name(url)
+        
+        timestamp = datetime.now().isoformat()
+        screenshot_id = str(uuid.uuid4())[:8]
+        filename = f"{name}_baseline_{screenshot_id}.png"
+        screenshot_path = self.storage_dir / filename
+        
+        # Take screenshot
+        success = await self.take_screenshot(url, str(screenshot_path), viewport_width, viewport_height)
+        
+        if success:
+            # Update metadata
+            metadata = self.load_metadata()
+            metadata[name] = {
+                "url": url,
+                "baseline_file": filename,
+                "baseline_path": str(screenshot_path),
+                "timestamp": timestamp,
+                "viewport": {"width": viewport_width, "height": viewport_height}
+            }
+            self.save_metadata(metadata)
+            
+            print(f"✅ Baseline stored for '{name}'")
+            print(f"   URL: {url}")
+            print(f"   File: {filename}")
+            print(f"   Timestamp: {timestamp}")
+        else:
+            print(f"❌ Failed to store baseline for '{name}'")
+    
+    async def compare_with_baseline(self, url: str, name: str = None, baseline_file: str = None):
+        """Compare current screenshot with stored baseline"""
+        if not name:
+            name = self.sanitize_name(url)
+        
+        metadata = self.load_metadata()
+        
+        # Find baseline
+        baseline_path = None
+        if baseline_file:
+            baseline_path = self.storage_dir / baseline_file
+            if not baseline_path.exists():
+                print(f"❌ Baseline file not found: {baseline_file}")
+                return
+        elif name in metadata:
+            baseline_path = Path(metadata[name]["baseline_path"])
+            if not baseline_path.exists():
+                print(f"❌ Baseline file not found: {baseline_path}")
+                return
+        else:
+            print(f"❌ No baseline found for '{name}'. Available baselines:")
+            for key in metadata.keys():
+                print(f"   - {key}")
+            return
+        
+        # Take current screenshot
+        timestamp = datetime.now().isoformat()
+        current_filename = f"{name}_current_{int(time.time())}.png"
+        current_path = self.storage_dir / current_filename
+        
+        print(f"🔄 Comparing {url} with baseline...")
+        success = await self.take_screenshot(url, str(current_path))
+        
+        if not success:
+            print("❌ Failed to take current screenshot")
+            return
+        
+        # Compare with Claude
+        analysis = self.compare_with_claude(str(baseline_path), str(current_path), url)
+        
+        # Generate report
+        self.generate_report(analysis, name, url, str(baseline_path), str(current_path), timestamp)
+    
+    def generate_report(self, analysis: dict, name: str, url: str, baseline_path: str, current_path: str, timestamp: str):
+        """Generate and display comparison report"""
+        print("\n" + "="*60)
+        print(f"📊 CHANGE DETECTION REPORT")
+        print("="*60)
+        print(f"Site: {name}")
+        print(f"URL: {url}")
+        print(f"Timestamp: {timestamp}")
+        print(f"Baseline: {Path(baseline_path).name}")
+        print(f"Current: {Path(current_path).name}")
+        print("-"*60)
+        
+        if "error" in analysis:
+            print(f"❌ Analysis Error: {analysis['error']}")
+            return
+        
+        # Status indicators
+        has_changes = analysis.get('has_changes', False)
+        severity = analysis.get('severity', 'unknown')
+        availability = analysis.get('availability_status', 'unknown')
+        
+        print(f"Changes Detected: {'🔴 YES' if has_changes else '🟢 NO'}")
+        print(f"Severity: {self.get_severity_emoji(severity)} {severity.upper()}")
+        print(f"Availability: {self.get_availability_emoji(availability)} {availability.upper()}")
+        
+        if analysis.get('summary'):
+            print(f"\n📝 Summary:")
+            print(f"   {analysis['summary']}")
+        
+        # Detailed changes
+        if analysis.get('changes_detected'):
+            print(f"\n🔍 Changes Found:")
+            for i, change in enumerate(analysis['changes_detected'], 1):
+                print(f"   {i}. Type: {change.get('type', 'unknown')}")
+                print(f"      Description: {change.get('description', 'N/A')}")
+                print(f"      Location: {change.get('location', 'N/A')}")
+                print(f"      Impact: {change.get('impact', 'N/A')}")
+                print()
+        
+        # Recommendations
+        if analysis.get('recommendations'):
+            print(f"💡 Recommendations:")
+            for rec in analysis['recommendations']:
+                print(f"   • {rec}")
+        
+        # Save detailed report
+        report_file = self.storage_dir / f"{name}_report_{int(time.time())}.json"
+        full_report = {
+            "metadata": {
+                "name": name,
+                "url": url,
+                "timestamp": timestamp,
+                "baseline_file": Path(baseline_path).name,
+                "current_file": Path(current_path).name
+            },
+            "analysis": analysis
+        }
+        
+        with open(report_file, 'w') as f:
+            json.dump(full_report, f, indent=2)
+        
+        print(f"\n📄 Detailed report saved: {report_file.name}")
+        print("="*60)
+    
+    def get_severity_emoji(self, severity: str) -> str:
+        """Get emoji for severity level"""
+        mapping = {
+            'none': '🟢',
+            'minor': '🟡', 
+            'moderate': '🟠',
+            'major': '🔴',
+            'critical': '🚨'
+        }
+        return mapping.get(severity.lower(), '❓')
+    
+    def get_availability_emoji(self, availability: str) -> str:
+        """Get emoji for availability status"""
+        mapping = {
+            'available': '🟢',
+            'partially_available': '🟡',
+            'unavailable': '🔴',
+            'error': '🚨'
+        }
+        return mapping.get(availability.lower(), '❓')
+    
+    def list_baselines(self):
+        """List all stored baselines"""
+        metadata = self.load_metadata()
+        
+        if not metadata:
+            print("No baselines stored yet.")
+            return
+        
+        print("\n📁 Stored Baselines:")
+        print("-" * 60)
+        for name, info in metadata.items():
+            print(f"Name: {name}")
+            print(f"URL: {info['url']}")
+            print(f"File: {info['baseline_file']}")
+            print(f"Created: {info['timestamp']}")
+            print(f"Viewport: {info['viewport']['width']}x{info['viewport']['height']}")
+            print("-" * 40)
+
+
+async def main():
+    parser = argparse.ArgumentParser(
+        description="Website Screenshot Monitoring with AI-Powered Change Detection",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Store a baseline screenshot
+  python screenshot_monitor.py baseline https://example.com --name mysite
+  
+  # Compare current with baseline
+  python screenshot_monitor.py compare https://example.com --name mysite
+  
+  # List all stored baselines
+  python screenshot_monitor.py list
+        """
+    )
+    
+    parser.add_argument('command', choices=['baseline', 'compare', 'list'], 
+                       help='Command to execute')
+    parser.add_argument('url', nargs='?', help='URL to process')
+    parser.add_argument('--name', help='Name for the baseline (auto-generated if not provided)')
+    parser.add_argument('--baseline-file', help='Specific baseline file to compare against')
+    parser.add_argument('--width', type=int, default=1920, help='Viewport width (default: 1920)')
+    parser.add_argument('--height', type=int, default=1080, help='Viewport height (default: 1080)')
+    parser.add_argument('--storage-dir', default='screenshots', help='Directory to store screenshots')
+    parser.add_argument('--aws-region', default='us-east-1', help='AWS region for Bedrock')
+    
+    args = parser.parse_args()
+    
+    monitor = ScreenshotMonitor(args.storage_dir, args.aws_region)
+    
+    if args.command == 'list':
+        monitor.list_baselines()
+        return
+    
+    if not args.url:
+        print("Error: URL is required for baseline and compare commands")
+        sys.exit(1)
+    
+    # Validate URL
+    url = args.url
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+        print(f"Adding https:// to URL: {url}")
+    
+    try:
+        if args.command == 'baseline':
+            await monitor.store_baseline(url, args.name, args.width, args.height)
+        elif args.command == 'compare':
+            await monitor.compare_with_baseline(url, args.name, args.baseline_file)
+    
+    except KeyboardInterrupt:
+        print("\nCancelled by user.")
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    asyncio.run(main()) 
