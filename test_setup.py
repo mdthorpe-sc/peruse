@@ -85,7 +85,7 @@ def test_bedrock_access():
         error_code = e.response['Error']['Code']
         if error_code == 'AccessDeniedException':
             print("❌ Bedrock access denied")
-            print("Go to AWS Bedrock Console → Model access → Request access to Claude 3.5 Sonnet")
+            print("Go to AWS Bedrock Console → Model access → Request access to Claude Opus 4")
         else:
             print(f"⚠️  Bedrock connection issue: {error_code}")
         return False

@@ -45,8 +45,8 @@ class ScreenshotMonitor:
         
         # Define model IDs to try (inference profile first, then direct model)
         self.model_ids = [
-            f"us.anthropic.claude-3-5-sonnet-20241022-v2:0",  # Inference profile (preferred)
-            f"anthropic.claude-3-5-sonnet-20241022-v2:0",     # Direct model (fallback)
+            f"us.anthropic.claude-opus-4-20250514-v1:0",      # Inference profile (preferred)
+            f"anthropic.claude-opus-4-20250514-v1:0",         # Direct model (fallback)
         ]
         
         # Initialize Bedrock client
@@ -119,8 +119,8 @@ class ScreenshotMonitor:
             return base64.b64encode(image_file.read()).decode('utf-8')
     
     def compare_with_claude(self, baseline_path: str, current_path: str, url: str) -> dict:
-        """Use Claude 3.5 Sonnet via Bedrock Converse API to compare screenshots"""
-        print("Analyzing screenshots with Claude 3.5 Sonnet...")
+        """Use Claude Opus 4 via Bedrock Converse API to compare screenshots"""
+        print("Analyzing screenshots with Claude Opus 4...")
         
         try:
             # Encode images
@@ -246,7 +246,7 @@ Be thorough but practical - highlight changes that would matter for deployment m
             error_code = e.response['Error']['Code']
             if error_code == 'ValidationException':
                 print("Error: Invalid request to Bedrock. Check your image format and size.")
-                print("Tip: Make sure you have access to Claude 3.5 Sonnet in your AWS region.")
+                print("Tip: Make sure you have access to Claude Opus 4 in your AWS region.")
             elif error_code == 'AccessDeniedException':
                 print("Error: Access denied to Bedrock. Check your AWS permissions.")
                 print("Tip: Request access to Claude models in Bedrock console: Model access > Request model access")
@@ -441,7 +441,7 @@ Be thorough but practical - highlight changes that would matter for deployment m
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Website Screenshot Monitoring with AI-Powered Change Detection",
+        description="Website Screenshot Monitoring with Claude Opus 4 AI-Powered Change Detection",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:

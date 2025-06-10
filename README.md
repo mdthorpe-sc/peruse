@@ -5,7 +5,7 @@ A comprehensive tool for taking website screenshots and using AI-powered change 
 ## Features
 
 - 🖼️ **High-quality screenshots** using Playwright
-- 🤖 **AI-powered change detection** using Claude 3.5 Sonnet via Amazon Bedrock Converse API
+- 🤖 **AI-powered change detection** using Claude Opus 4 via Amazon Bedrock Converse API
 - 📊 **Detailed change reports** with severity levels and recommendations
 - 💾 **Baseline storage** with metadata tracking
 - 🔍 **Intelligent analysis** of layout, content, styling, and availability changes
@@ -57,10 +57,10 @@ export AWS_DEFAULT_REGION="us-east-1"
 
 1. Go to AWS Bedrock Console
 2. Navigate to "Model access" 
-3. Request access to **Claude 3.5 Sonnet v2**
+3. Request access to **Claude Opus 4**
 4. The tool will automatically try these model identifiers:
-   - `us.anthropic.claude-3-5-sonnet-20241022-v2:0` (inference profile - preferred)
-   - `anthropic.claude-3-5-sonnet-20241022-v2:0` (direct model - fallback)
+   - `us.anthropic.claude-opus-4-20250514-v1:0` (inference profile - preferred)
+   - `anthropic.claude-opus-4-20250514-v1:0` (direct model - fallback)
 
 ### 5. Verify Setup
 
@@ -216,7 +216,7 @@ The AI analysis detects:
    ```
    Error: Access denied to Bedrock
    ```
-   **Solution**: Request access to Claude 3.5 Sonnet in Bedrock console → Model access
+   **Solution**: Request access to Claude Opus 4 in Bedrock console → Model access
 
 3. **Model Not Available**
    ```
