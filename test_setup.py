@@ -85,7 +85,7 @@ def test_bedrock_access():
         error_code = e.response['Error']['Code']
         if error_code == 'AccessDeniedException':
             print("❌ Bedrock access denied")
-            print("Go to AWS Bedrock Console → Model access → Request access to Claude Opus 4")
+            print("Go to AWS Bedrock Console → Model access → Request access to Claude models")
         else:
             print(f"⚠️  Bedrock connection issue: {error_code}")
         return False
@@ -117,8 +117,9 @@ async def main():
     if all_passed:
         print("🎉 All tests passed! You're ready to use the screenshot monitoring tool.")
         print("\nNext steps:")
-        print("1. Take a baseline: python screenshot_monitor.py baseline https://example.com")
-        print("2. Test comparison: python screenshot_monitor.py compare https://example.com")
+        print("1. List available models: python screenshot_monitor.py list-models")
+        print("2. Take a baseline: python screenshot_monitor.py baseline https://example.com --model claude-4-sonnet")
+        print("3. Test comparison: python screenshot_monitor.py compare https://example.com --model claude-4-sonnet")
     else:
         print("❌ Some tests failed. Please fix the issues above before using the tool.")
         sys.exit(1)

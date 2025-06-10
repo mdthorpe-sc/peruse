@@ -5,7 +5,7 @@ A comprehensive tool for taking website screenshots and using AI-powered change 
 ## Features
 
 - 🖼️ **High-quality screenshots** using Playwright
-- 🤖 **AI-powered change detection** using Claude Opus 4 via Amazon Bedrock Converse API
+- 🤖 **AI-powered change detection** using configurable Claude models via Amazon Bedrock Converse API
 - 📊 **Detailed change reports** with severity levels and recommendations
 - 💾 **Baseline storage** with metadata tracking
 - 🔍 **Intelligent analysis** of layout, content, styling, and availability changes
@@ -57,10 +57,25 @@ export AWS_DEFAULT_REGION="us-east-1"
 
 1. Go to AWS Bedrock Console
 2. Navigate to "Model access" 
-3. Request access to **Claude Opus 4**
-4. The tool will automatically try these model identifiers:
-   - `us.anthropic.claude-opus-4-20250514-v1:0` (inference profile - preferred)
-   - `anthropic.claude-opus-4-20250514-v1:0` (direct model - fallback)
+3. Request access to **Claude models** you want to use
+4. The tool supports multiple Claude models with automatic fallback from inference profile to direct model
+
+#### Available Models:
+Models are configured in `models.json` file. You can view and customize them:
+
+```bash
+# See all available models and their capabilities
+python screenshot_monitor.py list-models
+
+# Use custom config file
+python screenshot_monitor.py list-models --config my-models.json
+```
+
+**Default models included:**
+- `claude-4-sonnet` - Latest Sonnet, balanced performance (default)
+- `claude-3.5-sonnet` - Enhanced analysis capabilities  
+- `claude-3-opus` - Most capable for complex analysis
+- `claude-3-haiku` - Fast and cost-effective
 
 ### 5. Verify Setup
 
@@ -89,11 +104,11 @@ python screenshot_tool.py https://github.com --width 1280 --height 720
 #### 1. Store a Baseline Screenshot
 
 ```bash
-# Auto-generate name from URL
+# Auto-generate name from URL (uses default claude-4-sonnet)
 python screenshot_monitor.py baseline https://example.com
 
-# Use custom name
-python screenshot_monitor.py baseline https://example.com --name mysite
+# Use custom name and model
+python screenshot_monitor.py baseline https://example.com --name mysite --model claude-3.5-sonnet
 
 # Custom viewport
 python screenshot_monitor.py baseline https://example.com --name mysite --width 1280 --height 720
@@ -102,10 +117,10 @@ python screenshot_monitor.py baseline https://example.com --name mysite --width 
 #### 2. Compare with Baseline
 
 ```bash
-# Compare with stored baseline
-python screenshot_monitor.py compare https://example.com --name mysite
+# Compare with stored baseline using specific model
+python screenshot_monitor.py compare https://example.com --name mysite --model claude-3-opus
 
-# Auto-detect baseline from URL
+# Auto-detect baseline from URL (uses default model)
 python screenshot_monitor.py compare https://example.com
 ```
 
@@ -115,14 +130,23 @@ python screenshot_monitor.py compare https://example.com
 python screenshot_monitor.py list
 ```
 
+#### 4. List Available Models
+
+```bash
+python screenshot_monitor.py list-models
+```
+
 ## Example Workflow: Deployment Monitoring
 
 ```bash
-# 1. Before deployment - store baseline
-python screenshot_monitor.py baseline https://myapp.com --name production
+# 1. Before deployment - store baseline with high-quality model
+python screenshot_monitor.py baseline https://myapp.com --name production --model claude-3-opus
 
-# 2. After deployment - check for changes
-python screenshot_monitor.py compare https://myapp.com --name production
+# 2. After deployment - check for changes with same model  
+python screenshot_monitor.py compare https://myapp.com --name production --model claude-3-opus
+
+# 3. For frequent monitoring, use faster model
+python screenshot_monitor.py compare https://myapp.com --name production --model claude-3-haiku
 ```
 
 ## Output Examples
@@ -168,21 +192,70 @@ Availability: 🟢 AVAILABLE
 ### File Organization
 
 ```
-screenshots/
-├── metadata.json                           # Baseline tracking
-├── example_com_baseline_a1b2c3d4.png      # Baseline screenshot
-├── example_com_current_1705312245.png     # Current screenshot
-└── example_com_report_1705312245.json     # Detailed report
+project/
+├── models.json                             # Model configuration
+├── screenshot_monitor.py                   # Main monitoring tool
+├── screenshot_tool.py                      # Simple screenshot tool
+└── screenshots/
+    ├── metadata.json                       # Baseline tracking
+    ├── example_com_baseline_a1b2c3d4.png  # Baseline screenshot
+    ├── example_com_current_1705312245.png # Current screenshot
+    └── example_com_report_1705312245.json # Detailed report
 ```
 
 ## Configuration Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `--model` | from config | Claude model to use for analysis |
+| `--config` | models.json | Path to model configuration file |
 | `--width` | 1920 | Viewport width in pixels |
 | `--height` | 1080 | Viewport height in pixels |
 | `--storage-dir` | screenshots | Directory for storing files |
 | `--aws-region` | us-east-1 | AWS region for Bedrock |
+
+### Model Selection Guide
+
+| Model | Speed | Cost | Analysis Quality | Best For |
+|-------|-------|------|------------------|----------|
+| `claude-3-haiku` | ⚡⚡⚡ | 💰 | ⭐⭐⭐ | Simple change detection |
+| `claude-3-sonnet` | ⚡⚡ | 💰💰 | ⭐⭐⭐⭐ | Balanced performance |
+| `claude-3.5-sonnet` | ⚡⚡ | 💰💰 | ⭐⭐⭐⭐⭐ | Enhanced reasoning |
+| `claude-3-opus` | ⚡ | 💰💰💰 | ⭐⭐⭐⭐⭐⭐ | Complex analysis |
+| `claude-4-sonnet` | ⚡⚡ | 💰💰💰 | ⭐⭐⭐⭐⭐⭐ | Latest capabilities |
+| `claude-4-opus` | ⚡ | 💰💰💰💰 | ⭐⭐⭐⭐⭐⭐⭐ | Most advanced |
+
+### Custom Model Configuration
+
+You can customize the available models by editing `models.json`:
+
+```json
+{
+  "models": {
+    "my-custom-model": {
+      "inference_profile": "us.anthropic.claude-custom-model:0",
+      "direct": "anthropic.claude-custom-model:0",
+      "description": "My custom Claude model",
+      "speed": "fast",
+      "cost": "low",
+      "quality": "excellent"
+    }
+  },
+  "default_model": "my-custom-model",
+  "metadata": {
+    "version": "1.1",
+    "last_updated": "2024-01-15"
+  }
+}
+```
+
+**Required fields for each model:**
+- `inference_profile` - Bedrock inference profile ID
+- `direct` - Direct Bedrock model ID  
+- `description` - Human-readable description
+
+**Optional fields:**
+- `speed`, `cost`, `quality` - For documentation/selection guidance
 
 ## Change Detection Capabilities
 
@@ -216,7 +289,7 @@ The AI analysis detects:
    ```
    Error: Access denied to Bedrock
    ```
-   **Solution**: Request access to Claude Opus 4 in Bedrock console → Model access
+   **Solution**: Request access to Claude models in Bedrock console → Model access
 
 3. **Model Not Available**
    ```
@@ -241,6 +314,18 @@ The AI analysis detects:
    Error: Invalid request to Bedrock
    ```
    **Solution**: Reduce viewport size with `--width 1280 --height 720`
+
+7. **Configuration File Error**
+   ```
+   Model configuration file 'models.json' not found
+   ```
+   **Solution**: Ensure `models.json` exists in your working directory or specify custom path with `--config`
+
+8. **Invalid Model Configuration**
+   ```
+   Invalid JSON in configuration file
+   ```
+   **Solution**: Validate your JSON syntax - check for missing commas, quotes, or brackets
 
 ### Performance Tips
 

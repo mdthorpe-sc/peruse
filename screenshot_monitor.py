@@ -2,9 +2,10 @@
 """
 Website Screenshot Monitoring Tool with AI-Powered Change Detection
 Usage: 
-  python screenshot_monitor.py baseline <URL> [--name <name>]
-  python screenshot_monitor.py compare <URL> [--name <name>] [--baseline-file <file>]
+  python screenshot_monitor.py baseline <URL> [--name <name>] [--model <model>]
+  python screenshot_monitor.py compare <URL> [--name <name>] [--model <model>]
   python screenshot_monitor.py list
+  python screenshot_monitor.py list-models
 """
 
 import argparse
@@ -37,17 +38,70 @@ except ImportError:
 
 
 class ScreenshotMonitor:
-    def __init__(self, storage_dir: str = "screenshots", aws_region: str = "us-east-1"):
+    
+    def __init__(self, storage_dir: str = "screenshots", aws_region: str = "us-east-1", model_name: str = None, config_file: str = "models.json"):
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(exist_ok=True)
         self.metadata_file = self.storage_dir / "metadata.json"
         self.aws_region = aws_region
+        self.config_file = config_file
         
-        # Define model IDs to try (inference profile first, then direct model)
+        # Load model configurations from JSON file
+        self.model_config = self.load_model_config()
+        
+        # Use default model if none specified
+        if model_name is None:
+            model_name = self.model_config.get("default_model", "claude-4-sonnet")
+        
+        self.model_name = model_name
+        
+        # Validate and set model IDs
+        available_models = self.model_config.get("models", {})
+        if model_name not in available_models:
+            available = list(available_models.keys())
+            raise ValueError(f"Unknown model '{model_name}'. Available models: {available}")
+        
+        model_details = available_models[model_name]
         self.model_ids = [
-            f"us.anthropic.claude-opus-4-20250514-v1:0",      # Inference profile (preferred)
-            f"anthropic.claude-opus-4-20250514-v1:0",         # Direct model (fallback)
+            model_details["inference_profile"],  # Inference profile (preferred)
+            model_details["direct"]              # Direct model (fallback)
         ]
+        self.model_description = model_details["description"]
+    
+    def load_model_config(self) -> dict:
+        """Load model configuration from JSON file"""
+        config_path = Path(self.config_file)
+        
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"Model configuration file '{self.config_file}' not found. "
+                f"Please ensure the file exists in the current directory."
+            )
+        
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Validate basic structure
+            if "models" not in config:
+                raise ValueError("Configuration file must contain a 'models' section")
+            
+            if not isinstance(config["models"], dict):
+                raise ValueError("'models' section must be a dictionary")
+            
+            # Validate each model has required fields
+            for model_name, model_data in config["models"].items():
+                required_fields = ["inference_profile", "direct", "description"]
+                for field in required_fields:
+                    if field not in model_data:
+                        raise ValueError(f"Model '{model_name}' missing required field: '{field}'")
+            
+            return config
+            
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON in configuration file '{self.config_file}': {e}")
+        except Exception as e:
+            raise ValueError(f"Error loading configuration file '{self.config_file}': {e}")
         
         # Initialize Bedrock client
         try:
@@ -119,8 +173,8 @@ class ScreenshotMonitor:
             return base64.b64encode(image_file.read()).decode('utf-8')
     
     def compare_with_claude(self, baseline_path: str, current_path: str, url: str) -> dict:
-        """Use Claude Opus 4 via Bedrock Converse API to compare screenshots"""
-        print("Analyzing screenshots with Claude Opus 4...")
+        """Use Claude via Bedrock Converse API to compare screenshots"""
+        print(f"Analyzing screenshots with {self.model_name} ({self.model_description})...")
         
         try:
             # Encode images
@@ -246,7 +300,7 @@ Be thorough but practical - highlight changes that would matter for deployment m
             error_code = e.response['Error']['Code']
             if error_code == 'ValidationException':
                 print("Error: Invalid request to Bedrock. Check your image format and size.")
-                print("Tip: Make sure you have access to Claude Opus 4 in your AWS region.")
+                print(f"Tip: Make sure you have access to {self.model_name} in your AWS region.")
             elif error_code == 'AccessDeniedException':
                 print("Error: Access denied to Bedrock. Check your AWS permissions.")
                 print("Tip: Request access to Claude models in Bedrock console: Model access > Request model access")
@@ -437,26 +491,79 @@ Be thorough but practical - highlight changes that would matter for deployment m
             print(f"Created: {info['timestamp']}")
             print(f"Viewport: {info['viewport']['width']}x{info['viewport']['height']}")
             print("-" * 40)
+    
+    @staticmethod
+    def list_available_models(config_file: str = "models.json"):
+        """List all available Claude models from configuration file"""
+        try:
+            config_path = Path(config_file)
+            
+            if not config_path.exists():
+                print(f"❌ Model configuration file '{config_file}' not found.")
+                return
+            
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            models = config.get("models", {})
+            default_model = config.get("default_model", "N/A")
+            metadata = config.get("metadata", {})
+            
+            print("\n🤖 Available Claude Models:")
+            print("=" * 80)
+            
+            if metadata:
+                print(f"Configuration Version: {metadata.get('version', 'Unknown')}")
+                print(f"Last Updated: {metadata.get('last_updated', 'Unknown')}")
+                print(f"Default Model: {default_model}")
+                print("-" * 80)
+            
+            for model_name, model_config in models.items():
+                print(f"Model: {model_name}")
+                print(f"Description: {model_config.get('description', 'N/A')}")
+                
+                # Show additional metadata if available
+                if 'speed' in model_config:
+                    print(f"Speed: {model_config['speed'].title()}")
+                if 'cost' in model_config:
+                    print(f"Cost: {model_config['cost'].title()}")
+                if 'quality' in model_config:
+                    print(f"Quality: {model_config['quality'].title()}")
+                
+                print(f"Inference Profile: {model_config.get('inference_profile', 'N/A')}")
+                print(f"Direct Model: {model_config.get('direct', 'N/A')}")
+                print("-" * 60)
+            
+        except json.JSONDecodeError as e:
+            print(f"❌ Invalid JSON in configuration file: {e}")
+        except Exception as e:
+            print(f"❌ Error reading configuration file: {e}")
 
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Website Screenshot Monitoring with Claude Opus 4 AI-Powered Change Detection",
+        description="Website Screenshot Monitoring with AI-Powered Change Detection",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Store a baseline screenshot
   python screenshot_monitor.py baseline https://example.com --name mysite
   
-  # Compare current with baseline
-  python screenshot_monitor.py compare https://example.com --name mysite
+  # Compare current with baseline using Claude 3.5 Sonnet
+  python screenshot_monitor.py compare https://example.com --name mysite --model claude-3.5-sonnet
   
   # List all stored baselines
   python screenshot_monitor.py list
+  
+  # List available Claude models
+  python screenshot_monitor.py list-models
+  
+  # Use custom model configuration file
+  python screenshot_monitor.py compare https://example.com --config my-models.json
         """
     )
     
-    parser.add_argument('command', choices=['baseline', 'compare', 'list'], 
+    parser.add_argument('command', choices=['baseline', 'compare', 'list', 'list-models'], 
                        help='Command to execute')
     parser.add_argument('url', nargs='?', help='URL to process')
     parser.add_argument('--name', help='Name for the baseline (auto-generated if not provided)')
@@ -465,10 +572,25 @@ Examples:
     parser.add_argument('--height', type=int, default=1080, help='Viewport height (default: 1080)')
     parser.add_argument('--storage-dir', default='screenshots', help='Directory to store screenshots')
     parser.add_argument('--aws-region', default='us-east-1', help='AWS region for Bedrock')
+    parser.add_argument('--model', 
+                       help='Claude model to use (default from config file). Use list-models to see options')
+    parser.add_argument('--config', default='models.json',
+                       help='Path to model configuration file (default: models.json)')
     
     args = parser.parse_args()
     
-    monitor = ScreenshotMonitor(args.storage_dir, args.aws_region)
+    # Handle list-models command (no monitor needed)
+    if args.command == 'list-models':
+        ScreenshotMonitor.list_available_models(args.config)
+        return
+    
+    # Create monitor with specified model
+    try:
+        monitor = ScreenshotMonitor(args.storage_dir, args.aws_region, args.model, args.config)
+    except (ValueError, FileNotFoundError) as e:
+        print(f"Error: {e}")
+        print(f"Use 'python screenshot_monitor.py list-models --config {args.config}' to see available models")
+        sys.exit(1)
     
     if args.command == 'list':
         monitor.list_baselines()
