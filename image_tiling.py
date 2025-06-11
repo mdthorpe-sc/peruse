@@ -24,6 +24,9 @@ import uuid
 # Import logging framework
 from logging_config import get_logger
 
+# Import centralized configuration
+from config import get_config
+
 
 class ImageTilingError(Exception):
     """Custom exception for image tiling operations"""
@@ -54,19 +57,26 @@ def get_image_dimensions(image_path: str) -> Tuple[int, int]:
         raise ImageTilingError(f"Could not read image dimensions from {image_path}: {e}")
 
 
-def needs_tiling(image_path: str, max_height: int = 4000, max_width: int = 4096) -> bool:
+def needs_tiling(image_path: str, max_height: int = None, max_width: int = None) -> bool:
     """
     Check if an image needs to be tiled due to size constraints.
     
     Args:
         image_path: Path to the image file
-        max_height: Maximum allowed height in pixels (default: 4000)
-        max_width: Maximum allowed width in pixels (default: 4096)
+        max_height: Maximum allowed height in pixels (uses config default if None)
+        max_width: Maximum allowed width in pixels (uses config default if None)
     
     Returns:
         True if image needs tiling, False otherwise
     """
     logger = get_logger("image_tiling")
+    config = get_config()
+    
+    # Use configuration defaults if not specified
+    if max_height is None:
+        max_height = config.image_tiling.max_height_before_tiling
+    if max_width is None:
+        max_width = config.image_tiling.max_width_before_tiling
     
     try:
         width, height = get_image_dimensions(image_path)
@@ -84,8 +94,8 @@ def needs_tiling(image_path: str, max_height: int = 4000, max_width: int = 4096)
 
 def tile_image(
     image_path: str, 
-    tile_height: int = 3000, 
-    overlap: int = 200,
+    tile_height: int = None, 
+    overlap: int = None,
     temp_dir: Optional[str] = None
 ) -> List[str]:
     """
@@ -93,8 +103,8 @@ def tile_image(
     
     Args:
         image_path: Path to the image to tile
-        tile_height: Maximum height of each tile in pixels (default: 3000)
-        overlap: Overlap between tiles in pixels (default: 200)
+        tile_height: Maximum height of each tile in pixels (uses config default if None)
+        overlap: Overlap between tiles in pixels (uses config default if None)
         temp_dir: Directory for temporary files (default: system temp)
     
     Returns:
@@ -104,6 +114,13 @@ def tile_image(
         ImageTilingError: If tiling operation fails
     """
     logger = get_logger("image_tiling")
+    config = get_config()
+    
+    # Use configuration defaults if not specified
+    if tile_height is None:
+        tile_height = config.image_tiling.default_tile_height
+    if overlap is None:
+        overlap = config.image_tiling.default_overlap
     
     try:
         width, height = get_image_dimensions(image_path)
@@ -141,7 +158,12 @@ def tile_image(
                 tile_img = img.crop((0, tile_start_y, width, tile_end_y))
                 
                 # Save tile
-                tile_filename = f"tile_{image_id}_{tile_index:03d}_{tile_start_y}_{tile_end_y}.png"
+                tile_filename = config.storage.tile_filename_pattern.format(
+                    id=image_id, 
+                    index=tile_index, 
+                    start=tile_start_y, 
+                    end=tile_end_y
+                )
                 tile_path = temp_dir_path / tile_filename
                 tile_img.save(tile_path)
                 
@@ -392,17 +414,23 @@ def get_optimal_tile_settings(image_width: int, image_height: int) -> Dict[str, 
     Returns:
         Dictionary with recommended tile_height and overlap values
     """
-    # Base settings
-    base_tile_height = 3000
-    base_overlap = 200
+    config = get_config()
+    
+    # Get settings from configuration
+    base_tile_height = config.image_tiling.default_tile_height
+    base_overlap = config.image_tiling.default_overlap
+    max_height_threshold = config.image_tiling.max_height_before_tiling
+    medium_threshold = config.image_tiling.medium_image_threshold
+    medium_tile_height = config.image_tiling.medium_tile_height
+    medium_overlap = config.image_tiling.medium_overlap
     
     # Adjust based on image characteristics
-    if image_height <= 4000:
+    if image_height <= max_height_threshold:
         # Small enough for single tile
         return {"tile_height": image_height, "overlap": 0}
-    elif image_height <= 8000:
+    elif image_height <= medium_threshold:
         # Medium image - use larger tiles
-        return {"tile_height": 3500, "overlap": 250}
+        return {"tile_height": medium_tile_height, "overlap": medium_overlap}
     else:
         # Very large image - use standard settings
         return {"tile_height": base_tile_height, "overlap": base_overlap}

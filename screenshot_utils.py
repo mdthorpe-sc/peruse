@@ -14,6 +14,9 @@ from urllib.parse import urlparse
 # Import logging framework
 from logging_config import get_logger
 
+# Import centralized configuration
+from config import get_config, StringConstants
+
 try:
     from playwright.async_api import async_playwright
 except ImportError:
@@ -71,8 +74,8 @@ def normalize_url(url: str) -> str:
 async def take_screenshot_core(
     url: str, 
     output_path: str, 
-    viewport_width: int = 1920, 
-    viewport_height: int = 1080,
+    viewport_width: int = None, 
+    viewport_height: int = None,
     verbose: bool = True
 ) -> ScreenshotResult:
     """
@@ -81,17 +84,24 @@ async def take_screenshot_core(
     Args:
         url: URL to screenshot
         output_path: Path where to save the screenshot
-        viewport_width: Browser viewport width
-        viewport_height: Browser viewport height
+        viewport_width: Browser viewport width (uses config default if None)
+        viewport_height: Browser viewport height (uses config default if None)
         verbose: Whether to print status messages
     
     Returns:
         ScreenshotResult object with success status and details
     """
     logger = get_logger("screenshot_utils")
+    config = get_config()
+    
+    # Use configuration defaults if not specified
+    if viewport_width is None:
+        viewport_width = config.screenshot.default_width
+    if viewport_height is None:
+        viewport_height = config.screenshot.default_height
     
     if verbose:
-        logger.user_info(f"Taking screenshot of: {url}")
+        logger.user_info(StringConstants.INFO_MESSAGES["taking_screenshot"].format(url=url))
     
     try:
         async with async_playwright() as p:
@@ -105,21 +115,21 @@ async def take_screenshot_core(
                 
                 # Navigate with timeout and networkidle handling
                 try:
-                    await page.goto(url, wait_until='networkidle', timeout=30000)
+                    await page.goto(url, wait_until='networkidle', timeout=config.screenshot.page_load_timeout)
                 except Exception as e:
                     if verbose:
-                        logger.user_warning(f"Failed to wait for networkidle: {e}")
+                        logger.user_warning(StringConstants.INFO_MESSAGES["networkidle_failed"].format(error=e))
                     # Try to continue anyway
-                    await page.goto(url, timeout=30000)
+                    await page.goto(url, timeout=config.screenshot.page_load_timeout)
                 
                 # Wait for dynamic content
-                await page.wait_for_timeout(2000)
+                await page.wait_for_timeout(config.screenshot.dynamic_content_wait)
                 
                 # Take screenshot
                 await page.screenshot(path=output_path, full_page=True)
                 
                 if verbose:
-                    logger.user_success(f"Screenshot saved to: {output_path}")
+                    logger.user_success(StringConstants.SUCCESS_MESSAGES["screenshot_saved"].format(path=output_path))
                 
                 return ScreenshotResult(success=True, output_path=output_path)
                 
@@ -136,8 +146,8 @@ async def take_screenshot_core(
 async def take_screenshot_simple(
     url: str, 
     output_path: str, 
-    viewport_width: int = 1920, 
-    viewport_height: int = 1080
+    viewport_width: int = None, 
+    viewport_height: int = None
 ):
     """
     Simple screenshot function for basic use cases (screenshot_tool.py)
@@ -152,8 +162,8 @@ async def take_screenshot_simple(
 async def take_screenshot_with_result(
     url: str, 
     output_path: str, 
-    viewport_width: int = 1920, 
-    viewport_height: int = 1080,
+    viewport_width: int = None, 
+    viewport_height: int = None,
     verbose: bool = True
 ) -> bool:
     """
@@ -165,14 +175,17 @@ async def take_screenshot_with_result(
 
 def get_default_filename_for_url(url: str) -> str:
     """Generate a default filename for a URL"""
+    config = get_config()
     safe_name = sanitize_url_for_filename(url)
-    return f"{safe_name}.png"
+    return f"{safe_name}{config.screenshot.default_extension}"
 
 
 def ensure_png_extension(path: str) -> str:
     """Ensure a path ends with .png extension"""
-    if not path.lower().endswith('.png'):
-        return path + '.png'
+    config = get_config()
+    extension = config.screenshot.default_extension
+    if not path.lower().endswith(extension.lower()):
+        return path + extension
     return path
 
 
