@@ -45,6 +45,9 @@ except ImportError:
 
 
 class ScreenshotMonitor:
+    # Class-level cache for model configuration
+    _config_cache = {}
+    _config_file_timestamps = {}
     
     def __init__(self, storage_dir: str = "screenshots", aws_region: str = "us-east-1", model_name: str = None, config_file: str = "models.json"):
         self.storage_dir = Path(storage_dir)
@@ -86,7 +89,7 @@ class ScreenshotMonitor:
             sys.exit(1)
     
     def load_model_config(self) -> dict:
-        """Load model configuration from JSON file"""
+        """Load model configuration from JSON file with caching"""
         config_path = Path(self.config_file)
         
         if not config_path.exists():
@@ -96,6 +99,17 @@ class ScreenshotMonitor:
             )
         
         try:
+            # Get file modification time
+            file_mtime = config_path.stat().st_mtime
+            
+            # Check if we have a cached version that's still valid
+            if (self.config_file in self._config_cache and 
+                self.config_file in self._config_file_timestamps and
+                self._config_file_timestamps[self.config_file] >= file_mtime):
+                # Use cached configuration
+                return self._config_cache[self.config_file]
+            
+            # Need to load from file
             with open(config_path, 'r') as f:
                 config = json.load(f)
             
@@ -112,6 +126,10 @@ class ScreenshotMonitor:
                 for field in required_fields:
                     if field not in model_data:
                         raise ValueError(f"Model '{model_name}' missing required field: '{field}'")
+            
+            # Cache the configuration
+            self._config_cache[self.config_file] = config
+            self._config_file_timestamps[self.config_file] = file_mtime
             
             return config
             
@@ -509,8 +527,23 @@ Be thorough but practical - highlight changes that would matter for deployment m
                 print(f"❌ Model configuration file '{config_file}' not found.")
                 return
             
-            with open(config_path, 'r') as f:
-                config = json.load(f)
+            # Get file modification time
+            file_mtime = config_path.stat().st_mtime
+            
+            # Check if we have a cached version that's still valid
+            if (config_file in ScreenshotMonitor._config_cache and 
+                config_file in ScreenshotMonitor._config_file_timestamps and
+                ScreenshotMonitor._config_file_timestamps[config_file] >= file_mtime):
+                # Use cached configuration
+                config = ScreenshotMonitor._config_cache[config_file]
+            else:
+                # Load from file and cache it
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                
+                # Cache the configuration
+                ScreenshotMonitor._config_cache[config_file] = config
+                ScreenshotMonitor._config_file_timestamps[config_file] = file_mtime
             
             models = config.get("models", {})
             default_model = config.get("default_model", "N/A")
