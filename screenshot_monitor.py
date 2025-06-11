@@ -375,6 +375,8 @@ Be thorough but practical - highlight changes that would matter for deployment m
             self.logger.user_error(f"No baseline found for '{name}'. Available baselines:")
             for key in metadata.keys():
                 self.logger.user_info(f"   - {key}")
+            self.logger.user_info("\nTo create a baseline for this URL, run:")
+            self.logger.user_info(f"   python screenshot_monitor.py baseline {url} --name {name}")
             return
         
         # Take current screenshot
