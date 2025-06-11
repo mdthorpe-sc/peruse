@@ -55,6 +55,15 @@ from screenshot_utils import (
     normalize_url
 )
 
+# Import image tiling functionality
+from image_tiling import (
+    needs_tiling,
+    tile_image,
+    analyze_tiled_image,
+    cleanup_tiles,
+    get_image_dimensions
+)
+
 
 class ScreenshotMonitor:
     # Class-level cache for model configuration
@@ -320,6 +329,82 @@ Be thorough but practical - highlight changes that would matter for deployment m
             self.logger.user_error(f"Error during comparison: {e}")
             return {"error": str(e)}
     
+    def compare_with_claude_auto_tiling(self, baseline_path: str, current_path: str, url: str) -> dict:
+        """
+        Compare screenshots with automatic tiling for large images.
+        
+        This method automatically detects if images need tiling due to size constraints
+        and handles the tiling workflow transparently.
+        
+        Args:
+            baseline_path: Path to baseline screenshot
+            current_path: Path to current screenshot  
+            url: URL being analyzed
+            
+        Returns:
+            Analysis results (either from single image or combined tile analysis)
+        """
+        baseline_tiles = []
+        current_tiles = []
+        
+        try:
+            # Check if either image needs tiling
+            baseline_needs_tiling = needs_tiling(baseline_path)
+            current_needs_tiling = needs_tiling(current_path)
+            
+            if baseline_needs_tiling or current_needs_tiling:
+                # At least one image needs tiling - tile both for consistency
+                baseline_dims = get_image_dimensions(baseline_path)
+                current_dims = get_image_dimensions(current_path)
+                
+                self.logger.user_info(f"Large images detected:")
+                self.logger.user_info(f"  Baseline: {baseline_dims[0]}x{baseline_dims[1]}")  
+                self.logger.user_info(f"  Current: {current_dims[0]}x{current_dims[1]}")
+                self.logger.user_info("🔧 Using image tiling for analysis...")
+                
+                # Tile both images
+                baseline_tiles = tile_image(baseline_path, tile_height=3000, overlap=200)
+                current_tiles = tile_image(current_path, tile_height=3000, overlap=200)
+                
+                self.logger.user_info(f"Created {len(baseline_tiles)} baseline tiles and {len(current_tiles)} current tiles")
+                
+                # Analyze tiled images
+                analysis = analyze_tiled_image(baseline_tiles, current_tiles, url, self)
+                
+                # Add tiling metadata to analysis
+                analysis["tiling_used"] = True
+                analysis["baseline_dimensions"] = baseline_dims
+                analysis["current_dimensions"] = current_dims
+                analysis["tile_count"] = len(baseline_tiles)
+                
+            else:
+                # Images are small enough for direct comparison
+                baseline_dims = get_image_dimensions(baseline_path)
+                current_dims = get_image_dimensions(current_path)
+                
+                self.logger.debug(f"Images within size limits: {baseline_dims[0]}x{baseline_dims[1]} and {current_dims[0]}x{current_dims[1]}")
+                
+                # Use existing single-image comparison
+                analysis = self.compare_with_claude(baseline_path, current_path, url)
+                
+                # Add metadata
+                analysis["tiling_used"] = False
+                analysis["baseline_dimensions"] = baseline_dims
+                analysis["current_dimensions"] = current_dims
+            
+            return analysis
+            
+        except Exception as e:
+            self.logger.user_error(f"Error during tiling analysis: {e}")
+            return {"error": str(e), "tiling_used": False}
+            
+        finally:
+            # Always clean up temporary tile files
+            if baseline_tiles:
+                cleanup_tiles(baseline_tiles)
+            if current_tiles:
+                cleanup_tiles(current_tiles)
+    
     async def store_baseline(self, url: str, name: str = None, viewport_width: int = 1920, viewport_height: int = 1080):
         """Store a baseline screenshot"""
         if not name:
@@ -391,8 +476,8 @@ Be thorough but practical - highlight changes that would matter for deployment m
             self.logger.user_error("Failed to take current screenshot")
             return
         
-        # Compare with Claude
-        analysis = self.compare_with_claude(str(baseline_path), str(current_path), url)
+        # Compare with Claude (with automatic tiling for large images)
+        analysis = self.compare_with_claude_auto_tiling(str(baseline_path), str(current_path), url)
         
         # Generate report
         self.generate_report(analysis, name, url, str(baseline_path), str(current_path), timestamp)
@@ -419,6 +504,19 @@ Be thorough but practical - highlight changes that would matter for deployment m
         self.logger.report_item("Changes Detected", '🔴 YES' if has_changes else '🟢 NO')
         self.logger.report_item("Severity", f"{self.get_severity_emoji(severity)} {severity.upper()}")
         self.logger.report_item("Availability", f"{self.get_availability_emoji(availability)} {availability.upper()}")
+        
+        # Show tiling information if used
+        if analysis.get("tiling_used"):
+            baseline_dims = analysis.get("baseline_dimensions", (0, 0))
+            current_dims = analysis.get("current_dimensions", (0, 0))
+            tile_count = analysis.get("tile_count", 0)
+            self.logger.report_item("Analysis Method", f"🔧 Image Tiling ({tile_count} tiles)")
+            self.logger.report_item("Image Dimensions", f"Baseline: {baseline_dims[0]}x{baseline_dims[1]}, Current: {current_dims[0]}x{current_dims[1]}")
+        else:
+            baseline_dims = analysis.get("baseline_dimensions", (0, 0))
+            current_dims = analysis.get("current_dimensions", (0, 0))
+            self.logger.report_item("Analysis Method", "📷 Single Image")
+            self.logger.report_item("Image Dimensions", f"Baseline: {baseline_dims[0]}x{baseline_dims[1]}, Current: {current_dims[0]}x{current_dims[1]}")
         
         if analysis.get('summary'):
             self.logger.user_info(f"\n📝 Summary:")
