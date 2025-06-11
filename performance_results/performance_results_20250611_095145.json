@@ -1,0 +1,87 @@
+{
+  "timestamp": "2025-06-11T09:51:45.118053",
+  "optimizations": {
+    "prompt_caching": {
+      "Prompt Construction (String vs Template)": {
+        "old": {
+          "iterations": 1000,
+          "avg_time": 1.775394775904715e-07,
+          "median_time": 1.66997779160738e-07,
+          "min_time": 1.2497184798121452e-07,
+          "max_time": 3.1249946914613247e-06,
+          "std_dev": 9.686889623981802e-08,
+          "total_time": 0.0001775394775904715
+        },
+        "new": {
+          "iterations": 1000,
+          "avg_time": 1.8250088905915618e-06,
+          "median_time": 1.8329592421650887e-06,
+          "min_time": 1.7499551177024841e-06,
+          "max_time": 2.167013008147478e-06,
+          "std_dev": 4.9570527496630345e-08,
+          "total_time": 0.0018250088905915618
+        },
+        "improvement_ratio": 0.09728143161698435,
+        "improvement_percentage": 0
+      }
+    },
+    "config_caching": {
+      "Model Config Loading (File I/O vs Cache)": {
+        "old": {
+          "iterations": 500,
+          "avg_time": 3.931921429466456e-05,
+          "median_time": 3.6437471862882376e-05,
+          "min_time": 3.2917014323174953e-05,
+          "max_time": 0.0001296249683946371,
+          "std_dev": 1.1282108703046335e-05,
+          "total_time": 0.01965960714733228
+        },
+        "new": {
+          "iterations": 500,
+          "avg_time": 1.306907506659627e-07,
+          "median_time": 1.25030055642128e-07,
+          "min_time": 8.300412446260452e-08,
+          "max_time": 2.500019036233425e-07,
+          "std_dev": 2.4526421971105496e-08,
+          "total_time": 6.534537533298135e-05
+        },
+        "improvement_ratio": 300.85690145863487,
+        "improvement_percentage": 29985.690145863486
+      }
+    },
+    "memory_usage": {
+      "Memory Allocation (String Creation vs Template Reuse)": {
+        "old": {
+          "iterations": 500,
+          "avg_time": 2.971035079099238e-06,
+          "median_time": 2.707995008677244e-06,
+          "min_time": 2.541986759752035e-06,
+          "max_time": 3.470800584182143e-05,
+          "std_dev": 1.8932237438545787e-06,
+          "total_time": 0.001485517539549619
+        },
+        "new": {
+          "iterations": 500,
+          "avg_time": 0.00014133801241405307,
+          "median_time": 0.00013791650417260826,
+          "min_time": 0.00013529200805351138,
+          "max_time": 0.00022674998035654426,
+          "std_dev": 1.169070556802669e-05,
+          "total_time": 0.07066900620702654
+        },
+        "improvement_ratio": 0.02102077868758703,
+        "improvement_percentage": 0
+      }
+    }
+  },
+  "summary": {
+    "total_benchmarks": 3,
+    "successful_benchmarks": 3,
+    "average_improvement": 100.32506788964649,
+    "individual_improvements": {
+      "prompt": 0.09728143161698435,
+      "config": 300.85690145863487,
+      "memory": 0.02102077868758703
+    }
+  }
+}

@@ -60,6 +60,19 @@
 - **Benefits**: Reduces user confusion, improves onboarding experience
 - **Files Modified**: `screenshot_monitor.py`
 
+#### 6. **Image Tiling for Large Screenshots** ✅ *COMPLETED & MERGED*
+- **Achievement**: Solves ValidationException for oversized images (like shortcut.com 1920x9168)
+- **Implementation**: Automatic detection, smart tiling into 3000px chunks with 200px overlap
+- **Features**: 
+  - Transparent integration (no UI changes needed)
+  - Intelligent result combination with severity escalation
+  - Automatic cleanup of temporary tile files
+  - Enhanced reporting showing tiling method and dimensions
+- **Files Created**: `image_tiling.py` (500+ lines), `tests/test_image_tiling.py` (12 tests)
+- **Dependencies Added**: pillow, pytest
+- **Real-world Validation**: shortcut.com now works perfectly with Claude 4 Sonnet
+- **Performance**: Analyzes 4 tiles automatically, combines results intelligently
+
 #### 6. **JSON-Based Model Configuration** ✅ *COMPLETED*
 - **Achievement**: Externalized model configuration from hardcoded Python to `models.json`
 - **Benefits**: Easy maintenance, user customization, runtime updates
@@ -200,7 +213,8 @@ peruse/
 - Maintain detailed documentation for future reference
 - **IMPORTANT**: Cursor agent cannot run AWS-dependent tests (no AWS credentials)
 - **CRITICAL**: Never push changes directly to main branch - always use feature branches and PRs
-- **WORKFLOW**: Use GitHub MCP services instead of direct git commands when possible
+- **WORKFLOW PREFERENCE**: Always try to use GitHub MCP services or GitHub CLI (`gh` command)
+- **AVOID**: Using `git` CLI commands when `gh` commands are available as an alternative
 
 ### **Code Analysis Patterns**
 - Look for unreachable code after return statements

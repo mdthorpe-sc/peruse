@@ -70,6 +70,41 @@ class ScreenshotMonitor:
     _config_cache = {}
     _config_file_timestamps = {}
     
+    # Cache the large prompt template as a class constant
+    # This avoids reconstructing 500+ character string on every AI call
+    _ANALYSIS_PROMPT_TEMPLATE = """You are a website monitoring expert analyzing screenshots for changes. I will provide you with two screenshots of the same website URL: {url}
+
+The first image is the BASELINE (reference) screenshot.
+The second image is the CURRENT screenshot taken more recently.
+
+Please analyze these screenshots and provide a detailed comparison report in the following JSON format:
+
+{{
+    "has_changes": true/false,
+    "severity": "none|minor|moderate|major|critical",
+    "summary": "Brief summary of changes found",
+    "changes_detected": [
+        {{
+            "type": "layout|content|styling|functionality|error|availability",
+            "description": "Detailed description of the change",
+            "location": "Where on the page this change occurs",
+            "impact": "Potential impact of this change"
+        }}
+    ],
+    "availability_status": "available|partially_available|unavailable|error",
+    "recommendations": ["List of recommended actions if any issues found"]
+}}
+
+Focus on:
+- Layout changes (elements moved, resized, disappeared)
+- Content changes (text differences, images changed)
+- Error messages or broken elements
+- Overall site availability and functionality
+- Visual styling changes
+- Any elements that appear broken or missing
+
+Be thorough but practical - highlight changes that would matter for deployment monitoring."""
+    
     def __init__(self, storage_dir: str = "screenshots", aws_region: str = "us-east-1", model_name: str = None, config_file: str = "models.json"):
         # Initialize logger
         self.logger = get_logger("screenshot_monitor")
@@ -197,38 +232,7 @@ class ScreenshotMonitor:
             current_b64 = self.encode_image_to_base64(current_path)
             
             # Prepare the prompt
-            prompt = f"""You are a website monitoring expert analyzing screenshots for changes. I will provide you with two screenshots of the same website URL: {url}
-
-The first image is the BASELINE (reference) screenshot.
-The second image is the CURRENT screenshot taken more recently.
-
-Please analyze these screenshots and provide a detailed comparison report in the following JSON format:
-
-{{
-    "has_changes": true/false,
-    "severity": "none|minor|moderate|major|critical",
-    "summary": "Brief summary of changes found",
-    "changes_detected": [
-        {{
-            "type": "layout|content|styling|functionality|error|availability",
-            "description": "Detailed description of the change",
-            "location": "Where on the page this change occurs",
-            "impact": "Potential impact of this change"
-        }}
-    ],
-    "availability_status": "available|partially_available|unavailable|error",
-    "recommendations": ["List of recommended actions if any issues found"]
-}}
-
-Focus on:
-- Layout changes (elements moved, resized, disappeared)
-- Content changes (text differences, images changed)
-- Error messages or broken elements
-- Overall site availability and functionality
-- Visual styling changes
-- Any elements that appear broken or missing
-
-Be thorough but practical - highlight changes that would matter for deployment monitoring."""
+            prompt = self._ANALYSIS_PROMPT_TEMPLATE.format(url=url)
 
             # Try different model IDs until one works
             response = None
