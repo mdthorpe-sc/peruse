@@ -43,6 +43,13 @@ except ImportError:
     print("Please run: pip install boto3")
     sys.exit(1)
 
+# Import shared screenshot utilities
+from screenshot_utils import (
+    take_screenshot_with_result,
+    sanitize_url_for_storage_name,
+    normalize_url
+)
+
 
 class ScreenshotMonitor:
     # Class-level cache for model configuration
@@ -152,45 +159,11 @@ class ScreenshotMonitor:
     
     def sanitize_name(self, url: str) -> str:
         """Convert URL to a safe name for storage"""
-        parsed = urlparse(url)
-        domain = parsed.netloc or parsed.path
-        domain = re.sub(r'^www\.', '', domain)
-        safe_name = re.sub(r'[^\w\-.]', '_', domain)
-        safe_name = re.sub(r'_+', '_', safe_name)
-        return safe_name
+        return sanitize_url_for_storage_name(url)
     
     async def take_screenshot(self, url: str, output_path: str, viewport_width: int = 1920, viewport_height: int = 1080) -> bool:
         """Take a screenshot of the given URL"""
-        print(f"Taking screenshot of: {url}")
-        
-        try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch()
-                
-                try:
-                    page = await browser.new_page(viewport={'width': viewport_width, 'height': viewport_height})
-                    
-                    # Navigate with timeout
-                    try:
-                        await page.goto(url, wait_until='networkidle', timeout=30000)
-                    except Exception as e:
-                        print(f"Warning: Failed to wait for networkidle: {e}")
-                        await page.goto(url, timeout=30000)
-                    
-                    # Wait for dynamic content
-                    await page.wait_for_timeout(2000)
-                    
-                    # Take screenshot
-                    await page.screenshot(path=output_path, full_page=True)
-                    print(f"Screenshot saved to: {output_path}")
-                    return True
-                    
-                finally:
-                    await browser.close()
-                    
-        except Exception as e:
-            print(f"Error taking screenshot: {e}")
-            return False
+        return await take_screenshot_with_result(url, output_path, viewport_width, viewport_height)
     
     def encode_image_to_base64(self, image_path: str) -> str:
         """Encode image to base64 for Bedrock API"""
@@ -640,10 +613,9 @@ Examples:
         print("Error: URL is required for baseline and compare commands")
         sys.exit(1)
     
-    # Validate URL
-    url = args.url
-    if not url.startswith(('http://', 'https://')):
-        url = 'https://' + url
+    # Validate and normalize URL
+    url = normalize_url(args.url)
+    if url != args.url:
         print(f"Adding https:// to URL: {url}")
     
     try:
