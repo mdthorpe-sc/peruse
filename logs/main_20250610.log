@@ -1,0 +1,4 @@
+2025-06-10 19:59:50,065 - main - [32mINFO[0m - user_info:90 - Test message
+2025-06-10 19:59:50,065 - main - [31mERROR[0m - user_error:123 - ❌ Test error
+2025-06-10 19:59:50,065 - main - [32mINFO[0m - user_success:101 - ✅ Test success
+2025-06-10 19:59:50,065 - main - [33mWARNING[0m - user_warning:112 - ⚠️  Test warning

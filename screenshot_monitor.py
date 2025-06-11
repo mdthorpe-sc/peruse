@@ -27,20 +27,25 @@ from urllib.parse import urlparse
 import re
 import uuid
 
+# Import logging framework
+from logging_config import get_logger
+
 try:
     from playwright.async_api import async_playwright
 except ImportError:
-    print("Error: Playwright is not installed.")
-    print("Please run: pip install playwright")
-    print("Then run: playwright install")
+    logger = get_logger("screenshot_monitor")
+    logger.user_error("Playwright is not installed.")
+    logger.user_info("Please run: pip install playwright")
+    logger.user_info("Then run: playwright install")
     sys.exit(1)
 
 try:
     import boto3
     from botocore.exceptions import ClientError, NoCredentialsError
 except ImportError:
-    print("Error: boto3 is not installed.")
-    print("Please run: pip install boto3")
+    logger = get_logger("screenshot_monitor") 
+    logger.user_error("boto3 is not installed.")
+    logger.user_info("Please run: pip install boto3")
     sys.exit(1)
 
 # Import shared screenshot utilities
@@ -57,6 +62,9 @@ class ScreenshotMonitor:
     _config_file_timestamps = {}
     
     def __init__(self, storage_dir: str = "screenshots", aws_region: str = "us-east-1", model_name: str = None, config_file: str = "models.json"):
+        # Initialize logger
+        self.logger = get_logger("screenshot_monitor")
+        
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(exist_ok=True)
         self.metadata_file = self.storage_dir / "metadata.json"
@@ -89,10 +97,10 @@ class ScreenshotMonitor:
         try:
             self.bedrock = boto3.client('bedrock-runtime', region_name=aws_region)
         except NoCredentialsError:
-            print("Error: AWS credentials not found.")
-            print("Please configure AWS credentials using:")
-            print("  aws configure")
-            print("  or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables")
+            self.logger.user_error("AWS credentials not found.")
+            self.logger.user_info("Please configure AWS credentials using:")
+            self.logger.user_info("  aws configure")
+            self.logger.user_info("  or set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables")
             sys.exit(1)
     
     def load_model_config(self) -> dict:
@@ -172,7 +180,7 @@ class ScreenshotMonitor:
     
     def compare_with_claude(self, baseline_path: str, current_path: str, url: str) -> dict:
         """Use Claude via Bedrock Converse API to compare screenshots"""
-        print(f"Analyzing screenshots with {self.model_name} ({self.model_description})...")
+        self.logger.operation_start(f"Analyzing screenshots with {self.model_name} ({self.model_description})")
         
         try:
             # Encode images
@@ -219,7 +227,7 @@ Be thorough but practical - highlight changes that would matter for deployment m
             
             for model_id in self.model_ids:
                 try:
-                    print(f"Trying model: {model_id}")
+                    self.logger.debug(f"Trying model: {model_id}")
                     response = self.bedrock.converse(
                         modelId=model_id,
                         messages=[
@@ -254,12 +262,12 @@ Be thorough but practical - highlight changes that would matter for deployment m
                             "topP": 0.9
                         }
                     )
-                    print(f"✅ Successfully using model: {model_id}")
+                    self.logger.user_success(f"Successfully using model: {model_id}")
                     break
                 except ClientError as e:
                     last_error = e
                     error_code = e.response['Error']['Code']
-                    print(f"❌ Model {model_id} failed: {error_code}")
+                    self.logger.user_error(f"Model {model_id} failed: {error_code}")
                     continue
             
             if response is None:
@@ -297,19 +305,19 @@ Be thorough but practical - highlight changes that would matter for deployment m
         except ClientError as e:
             error_code = e.response['Error']['Code']
             if error_code == 'ValidationException':
-                print("Error: Invalid request to Bedrock. Check your image format and size.")
-                print(f"Tip: Make sure you have access to {self.model_name} in your AWS region.")
+                self.logger.user_error("Invalid request to Bedrock. Check your image format and size.")
+                self.logger.user_info(f"Tip: Make sure you have access to {self.model_name} in your AWS region.")
             elif error_code == 'AccessDeniedException':
-                print("Error: Access denied to Bedrock. Check your AWS permissions.")
-                print("Tip: Request access to Claude models in Bedrock console: Model access > Request model access")
+                self.logger.user_error("Access denied to Bedrock. Check your AWS permissions.")
+                self.logger.user_info("Tip: Request access to Claude models in Bedrock console: Model access > Request model access")
             elif error_code == 'ResourceNotFoundException':
-                print("Error: Model not found. The inference profile may not be available in your region.")
-                print("Tip: Try a different AWS region or check model availability.")
+                self.logger.user_error("Model not found. The inference profile may not be available in your region.")
+                self.logger.user_info("Tip: Try a different AWS region or check model availability.")
             else:
-                print(f"AWS Error: {e}")
+                self.logger.user_error(f"AWS Error: {e}")
             return {"error": str(e)}
         except Exception as e:
-            print(f"Error during comparison: {e}")
+            self.logger.user_error(f"Error during comparison: {e}")
             return {"error": str(e)}
     
     async def store_baseline(self, url: str, name: str = None, viewport_width: int = 1920, viewport_height: int = 1080):
@@ -337,12 +345,12 @@ Be thorough but practical - highlight changes that would matter for deployment m
             }
             self.save_metadata(metadata)
             
-            print(f"✅ Baseline stored for '{name}'")
-            print(f"   URL: {url}")
-            print(f"   File: {filename}")
-            print(f"   Timestamp: {timestamp}")
+            self.logger.user_success(f"Baseline stored for '{name}'")
+            self.logger.user_info(f"   URL: {url}")
+            self.logger.user_info(f"   File: {filename}")
+            self.logger.user_info(f"   Timestamp: {timestamp}")
         else:
-            print(f"❌ Failed to store baseline for '{name}'")
+            self.logger.user_error(f"Failed to store baseline for '{name}'")
     
     async def compare_with_baseline(self, url: str, name: str = None, baseline_file: str = None):
         """Compare current screenshot with stored baseline"""
@@ -356,17 +364,17 @@ Be thorough but practical - highlight changes that would matter for deployment m
         if baseline_file:
             baseline_path = self.storage_dir / baseline_file
             if not baseline_path.exists():
-                print(f"❌ Baseline file not found: {baseline_file}")
+                self.logger.user_error(f"Baseline file not found: {baseline_file}")
                 return
         elif name in metadata:
             baseline_path = Path(metadata[name]["baseline_path"])
             if not baseline_path.exists():
-                print(f"❌ Baseline file not found: {baseline_path}")
+                self.logger.user_error(f"Baseline file not found: {baseline_path}")
                 return
         else:
-            print(f"❌ No baseline found for '{name}'. Available baselines:")
+            self.logger.user_error(f"No baseline found for '{name}'. Available baselines:")
             for key in metadata.keys():
-                print(f"   - {key}")
+                self.logger.user_info(f"   - {key}")
             return
         
         # Take current screenshot
@@ -374,11 +382,11 @@ Be thorough but practical - highlight changes that would matter for deployment m
         current_filename = f"{name}_current_{int(time.time())}.png"
         current_path = self.storage_dir / current_filename
         
-        print(f"🔄 Comparing {url} with baseline...")
+        self.logger.operation_start(f"Comparing {url} with baseline")
         success = await self.take_screenshot(url, str(current_path))
         
         if not success:
-            print("❌ Failed to take current screenshot")
+            self.logger.user_error("Failed to take current screenshot")
             return
         
         # Compare with Claude
@@ -389,18 +397,16 @@ Be thorough but practical - highlight changes that would matter for deployment m
     
     def generate_report(self, analysis: dict, name: str, url: str, baseline_path: str, current_path: str, timestamp: str):
         """Generate and display comparison report"""
-        print("\n" + "="*60)
-        print(f"📊 CHANGE DETECTION REPORT")
-        print("="*60)
-        print(f"Site: {name}")
-        print(f"URL: {url}")
-        print(f"Timestamp: {timestamp}")
-        print(f"Baseline: {Path(baseline_path).name}")
-        print(f"Current: {Path(current_path).name}")
-        print("-"*60)
+        self.logger.report_section("CHANGE DETECTION REPORT")
+        self.logger.report_item("Site", name)
+        self.logger.report_item("URL", url)
+        self.logger.report_item("Timestamp", timestamp)
+        self.logger.report_item("Baseline", Path(baseline_path).name)
+        self.logger.report_item("Current", Path(current_path).name)
+        self.logger.report_subsection("")
         
         if "error" in analysis:
-            print(f"❌ Analysis Error: {analysis['error']}")
+            self.logger.user_error(f"Analysis Error: {analysis['error']}")
             return
         
         # Status indicators
@@ -408,29 +414,29 @@ Be thorough but practical - highlight changes that would matter for deployment m
         severity = analysis.get('severity', 'unknown')
         availability = analysis.get('availability_status', 'unknown')
         
-        print(f"Changes Detected: {'🔴 YES' if has_changes else '🟢 NO'}")
-        print(f"Severity: {self.get_severity_emoji(severity)} {severity.upper()}")
-        print(f"Availability: {self.get_availability_emoji(availability)} {availability.upper()}")
+        self.logger.report_item("Changes Detected", '🔴 YES' if has_changes else '🟢 NO')
+        self.logger.report_item("Severity", f"{self.get_severity_emoji(severity)} {severity.upper()}")
+        self.logger.report_item("Availability", f"{self.get_availability_emoji(availability)} {availability.upper()}")
         
         if analysis.get('summary'):
-            print(f"\n📝 Summary:")
-            print(f"   {analysis['summary']}")
+            self.logger.user_info(f"\n📝 Summary:")
+            self.logger.user_info(f"   {analysis['summary']}")
         
         # Detailed changes
         if analysis.get('changes_detected'):
-            print(f"\n🔍 Changes Found:")
+            self.logger.user_info(f"\n🔍 Changes Found:")
             for i, change in enumerate(analysis['changes_detected'], 1):
-                print(f"   {i}. Type: {change.get('type', 'unknown')}")
-                print(f"      Description: {change.get('description', 'N/A')}")
-                print(f"      Location: {change.get('location', 'N/A')}")
-                print(f"      Impact: {change.get('impact', 'N/A')}")
-                print()
+                self.logger.user_info(f"   {i}. Type: {change.get('type', 'unknown')}")
+                self.logger.user_info(f"      Description: {change.get('description', 'N/A')}")
+                self.logger.user_info(f"      Location: {change.get('location', 'N/A')}")
+                self.logger.user_info(f"      Impact: {change.get('impact', 'N/A')}")
+                self.logger.user_info("")
         
         # Recommendations
         if analysis.get('recommendations'):
-            print(f"💡 Recommendations:")
+            self.logger.user_info(f"💡 Recommendations:")
             for rec in analysis['recommendations']:
-                print(f"   • {rec}")
+                self.logger.user_info(f"   • {rec}")
         
         # Save detailed report
         report_file = self.storage_dir / f"{name}_report_{int(time.time())}.json"
@@ -448,8 +454,8 @@ Be thorough but practical - highlight changes that would matter for deployment m
         with open(report_file, 'w') as f:
             json.dump(full_report, f, indent=2)
         
-        print(f"\n📄 Detailed report saved: {report_file.name}")
-        print("="*60)
+        self.logger.user_info(f"\n📄 Detailed report saved: {report_file.name}")
+        self.logger.user_info("="*60)
     
     def get_severity_emoji(self, severity: str) -> str:
         """Get emoji for severity level"""
@@ -477,27 +483,28 @@ Be thorough but practical - highlight changes that would matter for deployment m
         metadata = self.load_metadata()
         
         if not metadata:
-            print("No baselines stored yet.")
+            self.logger.user_info("No baselines stored yet.")
             return
         
-        print("\n📁 Stored Baselines:")
-        print("-" * 60)
+        self.logger.user_info("\n📁 Stored Baselines:")
+        self.logger.user_info("-" * 60)
         for name, info in metadata.items():
-            print(f"Name: {name}")
-            print(f"URL: {info['url']}")
-            print(f"File: {info['baseline_file']}")
-            print(f"Created: {info['timestamp']}")
-            print(f"Viewport: {info['viewport']['width']}x{info['viewport']['height']}")
-            print("-" * 40)
+            self.logger.user_info(f"Name: {name}")
+            self.logger.user_info(f"URL: {info['url']}")
+            self.logger.user_info(f"File: {info['baseline_file']}")
+            self.logger.user_info(f"Created: {info['timestamp']}")
+            self.logger.user_info(f"Viewport: {info['viewport']['width']}x{info['viewport']['height']}")
+            self.logger.user_info("-" * 40)
     
     @staticmethod
     def list_available_models(config_file: str = "models.json"):
         """List all available Claude models from configuration file"""
+        logger = get_logger("screenshot_monitor")
         try:
             config_path = Path(config_file)
             
             if not config_path.exists():
-                print(f"❌ Model configuration file '{config_file}' not found.")
+                logger.user_error(f"Model configuration file '{config_file}' not found.")
                 return
             
             # Get file modification time
@@ -522,35 +529,35 @@ Be thorough but practical - highlight changes that would matter for deployment m
             default_model = config.get("default_model", "N/A")
             metadata = config.get("metadata", {})
             
-            print("\n🤖 Available Claude Models:")
-            print("=" * 80)
+            logger.user_info("\n🤖 Available Claude Models:")
+            logger.user_info("=" * 80)
             
             if metadata:
-                print(f"Configuration Version: {metadata.get('version', 'Unknown')}")
-                print(f"Last Updated: {metadata.get('last_updated', 'Unknown')}")
-                print(f"Default Model: {default_model}")
-                print("-" * 80)
+                logger.user_info(f"Configuration Version: {metadata.get('version', 'Unknown')}")
+                logger.user_info(f"Last Updated: {metadata.get('last_updated', 'Unknown')}")
+                logger.user_info(f"Default Model: {default_model}")
+                logger.user_info("-" * 80)
             
             for model_name, model_config in models.items():
-                print(f"Model: {model_name}")
-                print(f"Description: {model_config.get('description', 'N/A')}")
+                logger.user_info(f"Model: {model_name}")
+                logger.user_info(f"Description: {model_config.get('description', 'N/A')}")
                 
                 # Show additional metadata if available
                 if 'speed' in model_config:
-                    print(f"Speed: {model_config['speed'].title()}")
+                    logger.user_info(f"Speed: {model_config['speed'].title()}")
                 if 'cost' in model_config:
-                    print(f"Cost: {model_config['cost'].title()}")
+                    logger.user_info(f"Cost: {model_config['cost'].title()}")
                 if 'quality' in model_config:
-                    print(f"Quality: {model_config['quality'].title()}")
+                    logger.user_info(f"Quality: {model_config['quality'].title()}")
                 
-                print(f"Inference Profile: {model_config.get('inference_profile', 'N/A')}")
-                print(f"Direct Model: {model_config.get('direct', 'N/A')}")
-                print("-" * 60)
+                logger.user_info(f"Inference Profile: {model_config.get('inference_profile', 'N/A')}")
+                logger.user_info(f"Direct Model: {model_config.get('direct', 'N/A')}")
+                logger.user_info("-" * 60)
             
         except json.JSONDecodeError as e:
-            print(f"❌ Invalid JSON in configuration file: {e}")
+            logger.user_error(f"Invalid JSON in configuration file: {e}")
         except Exception as e:
-            print(f"❌ Error reading configuration file: {e}")
+            logger.user_error(f"Error reading configuration file: {e}")
 
 
 async def main():
@@ -601,8 +608,9 @@ Examples:
     try:
         monitor = ScreenshotMonitor(args.storage_dir, args.aws_region, args.model, args.config)
     except (ValueError, FileNotFoundError) as e:
-        print(f"Error: {e}")
-        print(f"Use 'python screenshot_monitor.py list-models --config {args.config}' to see available models")
+        logger = get_logger("screenshot_monitor")
+        logger.user_error(f"{e}")
+        logger.user_info(f"Use 'python screenshot_monitor.py list-models --config {args.config}' to see available models")
         sys.exit(1)
     
     if args.command == 'list':
@@ -610,13 +618,15 @@ Examples:
         return
     
     if not args.url:
-        print("Error: URL is required for baseline and compare commands")
+        logger = get_logger("screenshot_monitor")
+        logger.user_error("URL is required for baseline and compare commands")
         sys.exit(1)
     
     # Validate and normalize URL
     url = normalize_url(args.url)
     if url != args.url:
-        print(f"Adding https:// to URL: {url}")
+        logger = get_logger("screenshot_monitor")
+        logger.user_info(f"Adding https:// to URL: {url}")
     
     try:
         if args.command == 'baseline':
@@ -625,9 +635,11 @@ Examples:
             await monitor.compare_with_baseline(url, args.name, args.baseline_file)
     
     except KeyboardInterrupt:
-        print("\nCancelled by user.")
+        logger = get_logger("screenshot_monitor")
+        logger.user_info("\nCancelled by user.")
     except Exception as e:
-        print(f"Error: {e}")
+        logger = get_logger("screenshot_monitor")
+        logger.user_error(f"Error: {e}")
         sys.exit(1)
 
 

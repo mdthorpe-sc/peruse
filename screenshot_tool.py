@@ -9,6 +9,9 @@ import asyncio
 import sys
 from pathlib import Path
 
+# Import logging framework
+from logging_config import get_logger
+
 # Import shared screenshot utilities
 from screenshot_utils import (
     take_screenshot_simple,
@@ -23,6 +26,8 @@ from screenshot_utils import (
 
 
 def main():
+    logger = get_logger("screenshot_tool")
+    
     parser = argparse.ArgumentParser(
         description="Take a screenshot of a webpage",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -44,7 +49,7 @@ Examples:
     # Validate and normalize URL
     url = normalize_url(args.url)
     if url != args.url:
-        print(f"Adding https:// to URL: {url}")
+        logger.user_info(f"Adding https:// to URL: {url}")
     
     # Determine output filename
     if args.output:
@@ -54,16 +59,16 @@ Examples:
     
     # Check if output file already exists and get user confirmation
     if not validate_output_file(output_path):
-        print("Cancelled.")
+        logger.user_info("Cancelled.")
         return
     
     try:
         # Run the screenshot function using shared utilities
         asyncio.run(take_screenshot_simple(url, output_path, args.width, args.height))
     except KeyboardInterrupt:
-        print("\nCancelled by user.")
+        logger.user_info("\nCancelled by user.")
     except Exception as e:
-        print(f"Error taking screenshot: {e}")
+        logger.user_error(f"Error taking screenshot: {e}")
         sys.exit(1)
 
 
