@@ -11,12 +11,16 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+# Import logging framework
+from logging_config import get_logger
+
 try:
     from playwright.async_api import async_playwright
 except ImportError:
-    print("Error: Playwright is not installed.")
-    print("Please run: pip install playwright")
-    print("Then run: playwright install")
+    logger = get_logger("screenshot_utils")
+    logger.user_error("Playwright is not installed.")
+    logger.user_info("Please run: pip install playwright")
+    logger.user_info("Then run: playwright install")
     sys.exit(1)
 
 
@@ -84,8 +88,10 @@ async def take_screenshot_core(
     Returns:
         ScreenshotResult object with success status and details
     """
+    logger = get_logger("screenshot_utils")
+    
     if verbose:
-        print(f"Taking screenshot of: {url}")
+        logger.user_info(f"Taking screenshot of: {url}")
     
     try:
         async with async_playwright() as p:
@@ -102,7 +108,7 @@ async def take_screenshot_core(
                     await page.goto(url, wait_until='networkidle', timeout=30000)
                 except Exception as e:
                     if verbose:
-                        print(f"Warning: Failed to wait for networkidle: {e}")
+                        logger.user_warning(f"Failed to wait for networkidle: {e}")
                     # Try to continue anyway
                     await page.goto(url, timeout=30000)
                 
@@ -113,7 +119,7 @@ async def take_screenshot_core(
                 await page.screenshot(path=output_path, full_page=True)
                 
                 if verbose:
-                    print(f"Screenshot saved to: {output_path}")
+                    logger.user_success(f"Screenshot saved to: {output_path}")
                 
                 return ScreenshotResult(success=True, output_path=output_path)
                 
@@ -123,7 +129,7 @@ async def take_screenshot_core(
     except Exception as e:
         error_msg = f"Error taking screenshot: {e}"
         if verbose:
-            print(error_msg)
+            logger.user_error(error_msg)
         return ScreenshotResult(success=False, error=error_msg)
 
 
