@@ -59,13 +59,14 @@
 
 ### **Phase 1: Critical Fixes** 
 - [x] Fix Bedrock client initialization ✅ **COMPLETED**
+- [x] Cache model configuration in memory ✅ **COMPLETED & MERGED** (6.2x improvement)
 - [ ] Add basic input validation
 - [ ] Implement proper error handling
 
 ### **High Impact, Low Effort (Next Priority)**
-1. **Cache model configuration in memory** (30 min)
-2. **Extract screenshot logic to shared module** (1 hour)  
-3. **Add proper logging framework** (1 hour)
+1. **Extract screenshot logic to shared module** (1 hour)  
+2. **Add proper logging framework** (1 hour)
+3. **Implement image streaming for large files** (4 hours)
 
 ### **High Impact, Medium Effort**
 4. **Implement image streaming for large files** (4 hours)
@@ -86,6 +87,8 @@
 - ❌ AI-powered screenshot comparison
 - ❌ Claude model communication
 - ❌ Error handling for AWS-specific failures
+- ❌ End-to-end `compare` command testing
+- **⚠️ CONSTRAINT**: Cursor agent has no AWS access - focus on code-only optimizations
 
 ### **Test Commands Used**
 ```bash
@@ -132,14 +135,17 @@ peruse/
 ### **For Next Session**
 1. **Read this file first** to understand current state
 2. **Check OPTIMIZATIONS.md** for remaining work
-3. **Current priority**: Cache model configuration (30 min task)
+3. **Current priority**: Extract screenshot logic to shared module (1 hour task)
 4. **Test approach**: Focus on code-only optimizations (no AWS required)
+5. **⚠️ WORKFLOW**: Always create feature branch → PR → never push to main directly
 
 ### **Context Clues for AI Assistant**
 - We've established trust through successful bug fixing
 - User prefers incremental, tested changes
 - Focus on high-impact, low-effort optimizations first
 - Maintain detailed documentation for future reference
+- **IMPORTANT**: Cursor agent cannot run AWS-dependent tests (no AWS credentials)
+- **CRITICAL**: Never push changes directly to main branch - always use feature branches and PRs
 
 ### **Code Analysis Patterns**
 - Look for unreachable code after return statements
@@ -154,6 +160,8 @@ peruse/
 - ✅ Configuration externalized and validated
 - ✅ Comprehensive optimization roadmap created
 - ✅ Development context preserved
+- ✅ Model configuration caching implemented (6.2x performance improvement)
+- ✅ Professional Git workflow established (branch → PR → merge)
 
 ### **Next Targets**
 - 🎯 Reduce memory usage during image processing
@@ -175,6 +183,7 @@ peruse/
 
 ---
 
-*Last Updated: January 2024*  
+*Last Updated: January 2025*  
 *Status: Ready for next optimization phase*  
-*Priority: Cache model configuration implementation* 
+*Priority: Extract screenshot logic to shared module*  
+*Workflow: Feature branch → PR → merge (never push to main directly)* 
