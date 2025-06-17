@@ -1,0 +1,47 @@
+{
+  "screenshot": {
+    "default_width": 1920,
+    "default_height": 1080,
+    "page_load_timeout": 30000,
+    "dynamic_content_wait": 2000,
+    "default_extension": ".png",
+    "full_page": true
+  },
+  "image_tiling": {
+    "max_height_before_tiling": 4000,
+    "max_width_before_tiling": 4096,
+    "default_tile_height": 3000,
+    "default_overlap": 200,
+    "medium_image_threshold": 8000,
+    "medium_tile_height": 3500,
+    "medium_overlap": 250
+  },
+  "ai": {
+    "max_tokens": 4000,
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "default_model_config_file": "models.json",
+    "default_aws_region": "us-east-1"
+  },
+  "storage": {
+    "default_screenshots_dir": "screenshots",
+    "default_logs_dir": "logs",
+    "default_performance_results_dir": "performance_results",
+    "baseline_filename_pattern": "{name}_baseline_{id}.png",
+    "current_filename_pattern": "{name}_current_{timestamp}.png",
+    "report_filename_pattern": "{name}_report_{timestamp}.json",
+    "tile_filename_pattern": "tile_{id}_{index:03d}_{start}_{end}.png",
+    "metadata_filename": "metadata.json"
+  },
+  "performance": {
+    "default_iterations": 1000,
+    "warmup_iterations": 100,
+    "config_benchmark_iterations": 500,
+    "results_timestamp_format": "%Y%m%d_%H%M%S",
+    "session_timestamp_format": "%Y%m%d_%H%M%S"
+  },
+  "metadata": {
+    "created": "2025-06-11T12:52:09.300093",
+    "version": "1.0"
+  }
+}

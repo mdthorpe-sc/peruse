@@ -64,6 +64,9 @@ from image_tiling import (
     get_image_dimensions
 )
 
+# Import centralized configuration
+from config import get_config, StringConstants
+
 
 class ScreenshotMonitor:
     # Class-level cache for model configuration
@@ -105,13 +108,24 @@ Focus on:
 
 Be thorough but practical - highlight changes that would matter for deployment monitoring."""
     
-    def __init__(self, storage_dir: str = "screenshots", aws_region: str = "us-east-1", model_name: str = None, config_file: str = "models.json"):
+    def __init__(self, storage_dir: str = None, aws_region: str = None, model_name: str = None, config_file: str = None):
         # Initialize logger
         self.logger = get_logger("screenshot_monitor")
         
+        # Load configuration and set defaults
+        self.app_config = get_config()
+        
+        # Use configuration defaults if not specified
+        if storage_dir is None:
+            storage_dir = self.app_config.storage.default_screenshots_dir
+        if aws_region is None:
+            aws_region = self.app_config.ai.default_aws_region
+        if config_file is None:
+            config_file = self.app_config.ai.default_model_config_file
+        
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(exist_ok=True)
-        self.metadata_file = self.storage_dir / "metadata.json"
+        self.metadata_file = self.storage_dir / self.app_config.storage.metadata_filename
         self.aws_region = aws_region
         self.config_file = config_file
         
@@ -213,8 +227,13 @@ Be thorough but practical - highlight changes that would matter for deployment m
         """Convert URL to a safe name for storage"""
         return sanitize_url_for_storage_name(url)
     
-    async def take_screenshot(self, url: str, output_path: str, viewport_width: int = 1920, viewport_height: int = 1080) -> bool:
+    async def take_screenshot(self, url: str, output_path: str, viewport_width: int = None, viewport_height: int = None) -> bool:
         """Take a screenshot of the given URL"""
+        # Use config defaults if not specified
+        if viewport_width is None:
+            viewport_width = self.app_config.screenshot.default_width
+        if viewport_height is None:
+            viewport_height = self.app_config.screenshot.default_height
         return await take_screenshot_with_result(url, output_path, viewport_width, viewport_height)
     
     def encode_image_to_base64(self, image_path: str) -> str:
@@ -270,9 +289,9 @@ Be thorough but practical - highlight changes that would matter for deployment m
                             }
                         ],
                         inferenceConfig={
-                            "maxTokens": 4000,
-                            "temperature": 0.1,
-                            "topP": 0.9
+                            "maxTokens": self.app_config.ai.max_tokens,
+                            "temperature": self.app_config.ai.temperature,
+                            "topP": self.app_config.ai.top_p
                         }
                     )
                     self.logger.user_success(f"Successfully using model: {model_id}")
@@ -409,14 +428,14 @@ Be thorough but practical - highlight changes that would matter for deployment m
             if current_tiles:
                 cleanup_tiles(current_tiles)
     
-    async def store_baseline(self, url: str, name: str = None, viewport_width: int = 1920, viewport_height: int = 1080):
+    async def store_baseline(self, url: str, name: str = None, viewport_width: int = None, viewport_height: int = None):
         """Store a baseline screenshot"""
         if not name:
             name = self.sanitize_name(url)
         
         timestamp = datetime.now().isoformat()
         screenshot_id = str(uuid.uuid4())[:8]
-        filename = f"{name}_baseline_{screenshot_id}.png"
+        filename = self.app_config.storage.baseline_filename_pattern.format(name=name, id=screenshot_id)
         screenshot_path = self.storage_dir / filename
         
         # Take screenshot
@@ -470,7 +489,8 @@ Be thorough but practical - highlight changes that would matter for deployment m
         
         # Take current screenshot
         timestamp = datetime.now().isoformat()
-        current_filename = f"{name}_current_{int(time.time())}.png"
+        current_timestamp = int(time.time())
+        current_filename = self.app_config.storage.current_filename_pattern.format(name=name, timestamp=current_timestamp)
         current_path = self.storage_dir / current_filename
         
         self.logger.operation_start(f"Comparing {url} with baseline")
@@ -692,14 +712,22 @@ Examples:
     parser.add_argument('url', nargs='?', help='URL to process')
     parser.add_argument('--name', help='Name for the baseline (auto-generated if not provided)')
     parser.add_argument('--baseline-file', help='Specific baseline file to compare against')
-    parser.add_argument('--width', type=int, default=1920, help='Viewport width (default: 1920)')
-    parser.add_argument('--height', type=int, default=1080, help='Viewport height (default: 1080)')
-    parser.add_argument('--storage-dir', default='screenshots', help='Directory to store screenshots')
-    parser.add_argument('--aws-region', default='us-east-1', help='AWS region for Bedrock')
+    # Load config for CLI defaults
+    app_config = get_config()
+    defaults = app_config.get_screenshot_defaults()
+    
+    parser.add_argument('--width', type=int, default=defaults["width"], 
+                       help=f'Viewport width (default: {defaults["width"]})')
+    parser.add_argument('--height', type=int, default=defaults["height"], 
+                       help=f'Viewport height (default: {defaults["height"]})')
+    parser.add_argument('--storage-dir', default=defaults["storage_dir"], 
+                       help=f'Directory to store screenshots (default: {defaults["storage_dir"]})')
+    parser.add_argument('--aws-region', default=defaults["aws_region"], 
+                       help=f'AWS region for Bedrock (default: {defaults["aws_region"]})')
     parser.add_argument('--model', 
                        help='Claude model to use (default from config file). Use list-models to see options')
-    parser.add_argument('--config', default='models.json',
-                       help='Path to model configuration file (default: models.json)')
+    parser.add_argument('--config', default=defaults["config"],
+                       help=f'Path to model configuration file (default: {defaults["config"]})')
     
     args = parser.parse_args()
     
@@ -730,7 +758,7 @@ Examples:
     url = normalize_url(args.url)
     if url != args.url:
         logger = get_logger("screenshot_monitor")
-        logger.user_info(f"Adding https:// to URL: {url}")
+        logger.user_info(StringConstants.INFO_MESSAGES["url_normalized"].format(url=url))
     
     try:
         if args.command == 'baseline':
